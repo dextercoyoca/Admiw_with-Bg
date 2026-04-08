@@ -1,50 +1,55 @@
-# Welcome to your Expo app 👋
+# Electripay Admin Portal
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Admin panel for billing operations with MongoDB-backed authentication and role-protected API routes.
 
-## Get started
+## Admin Sections
 
-1. Install dependencies
+- Dashboard (main landing page after login)
+- Users
+- Usage
+- Bills
+- Settings
+- Reports
+- Notifications
 
-   ```bash
-   npm install
-   ```
+## Security Rules Implemented
 
-2. Start the app
+- Login is validated from MongoDB `admin-side` collection
+- API routes require signed bearer token
+- Backend verifies `role === "admin"`
+- Admin data routes are not accessible without valid admin token
 
-   ```bash
-   npx expo start
-   ```
+## Data Sources
 
-In the output, you'll find options to open the app in a
+- Admin login collection: `admin-side`
+- Admin panel content collection: `users`
+- Settings collection: `admin-settings`
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Environment
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+Use `config.env` (primary) or `.env` (fallback):
 
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```env
+ATLAS_URI=mongodb+srv://...
+MONGODB_DB_NAME=database_electripay
+ADMIN_AUTH_SECRET=change-this-secret
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Start
 
-## Learn more
+```bash
+npm install
+npm run web
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## Main API Routes
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- `POST /api/auth/login`
+- `GET /api/clients`
+- `PATCH /api/clients/:id`
+- `GET /api/admin/users`
+- `POST /api/admin/users`
+- `PATCH /api/admin/users/:id`
+- `DELETE /api/admin/users/:id`
+- `GET /api/admin/settings`
+- `PATCH /api/admin/settings`
