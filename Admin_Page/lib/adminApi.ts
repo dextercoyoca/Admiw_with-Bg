@@ -12,16 +12,30 @@ export type AdminUserRecord = {
   usageKwh: number;
   revenueCollected: number;
   amountDue: number;
+  dueDate?: string;
   paymentStatus: "Paid" | "Unpaid";
   clientStatus: "Active" | "Suspended" | "Disconnected";
   updatedAt: string;
+  usageHistory: Array<{
+    label: string;
+    usage: number;
+  }>;
 };
 
 export type AdminNotificationRecord = {
   id: string;
   title: string;
   message: string;
-  audience: "all";
+  audience: string;
+  notificationType: string;
+  priority: string;
+  scheduledFor: string;
+  deliveryStats: {
+    sent: number;
+    read: number;
+    failed: number;
+    audienceSize: number;
+  };
   createdAt: string;
 };
 
@@ -120,6 +134,8 @@ export async function fetchSettings() {
       electricityRate: number;
       billingCycle: "monthly" | "weekly";
       latePenaltyPercent: number;
+      effectiveDate?: "immediate" | "nextCycle";
+      updatedAt?: string;
     };
     source: "mongodb" | "memory";
   }>(response);
@@ -129,6 +145,7 @@ export async function saveSettings(payload: {
   electricityRate: number;
   billingCycle: "monthly" | "weekly";
   latePenaltyPercent: number;
+  effectiveDate?: "immediate" | "nextCycle";
 }) {
   const response = await fetch("/api/admin/settings", {
     method: "PATCH",
@@ -144,6 +161,8 @@ export async function saveSettings(payload: {
       electricityRate: number;
       billingCycle: "monthly" | "weekly";
       latePenaltyPercent: number;
+      effectiveDate?: "immediate" | "nextCycle";
+      updatedAt?: string;
     };
     source: "mongodb" | "memory";
   }>(response);
@@ -163,7 +182,16 @@ export async function fetchAdminNotifications() {
 export async function createAdminNotification(payload: {
   title?: string;
   message: string;
-  audience?: "all";
+  audience?: string;
+  notificationType?: string;
+  priority?: string;
+  scheduledFor?: string;
+  deliveryStats?: {
+    sent: number;
+    read: number;
+    failed: number;
+    audienceSize: number;
+  };
 }) {
   const response = await fetch("/api/admin/notifications", {
     method: "POST",

@@ -8,7 +8,16 @@ type NotificationDoc = {
   _id: ObjectId | string;
   title?: string;
   message?: string;
-  audience?: "all";
+  audience?: string;
+  notificationType?: string;
+  priority?: string;
+  scheduledFor?: string;
+  deliveryStats?: {
+    sent?: number;
+    read?: number;
+    failed?: number;
+    audienceSize?: number;
+  };
   createdAt?: string;
   updatedAt?: string;
 };
@@ -17,7 +26,16 @@ export type NotificationRecord = {
   id: string;
   title: string;
   message: string;
-  audience: "all";
+  audience: string;
+  notificationType: string;
+  priority: string;
+  scheduledFor: string;
+  deliveryStats: {
+    sent: number;
+    read: number;
+    failed: number;
+    audienceSize: number;
+  };
   createdAt: string;
 };
 
@@ -26,7 +44,16 @@ function mapNotification(doc: NotificationDoc): NotificationRecord {
     id: doc._id.toString(),
     title: (doc.title || "ElectriPay Notice").toString(),
     message: (doc.message || "").toString(),
-    audience: "all",
+    audience: (doc.audience || "all").toString(),
+    notificationType: (doc.notificationType || "Info").toString(),
+    priority: (doc.priority || "Normal").toString(),
+    scheduledFor: (doc.scheduledFor || "").toString(),
+    deliveryStats: {
+      sent: Number(doc.deliveryStats?.sent || 0),
+      read: Number(doc.deliveryStats?.read || 0),
+      failed: Number(doc.deliveryStats?.failed || 0),
+      audienceSize: Number(doc.deliveryStats?.audienceSize || 0),
+    },
     createdAt: doc.createdAt || new Date().toISOString(),
   };
 }
@@ -58,7 +85,16 @@ export async function listNotifications(limit = 20) {
 export async function createNotification(input: {
   title?: string;
   message: string;
-  audience?: "all";
+  audience?: string;
+  notificationType?: string;
+  priority?: string;
+  scheduledFor?: string;
+  deliveryStats?: {
+    sent: number;
+    read: number;
+    failed: number;
+    audienceSize: number;
+  };
 }) {
   const title = (input.title || "ElectriPay Notice").trim();
   const message = input.message.trim();
@@ -68,7 +104,15 @@ export async function createNotification(input: {
 
   if (!mongo) {
     return {
-      notification: addMemoryNotification({ title, message, audience }),
+      notification: addMemoryNotification({
+        title,
+        message,
+        audience,
+        notificationType: input.notificationType,
+        priority: input.priority,
+        scheduledFor: input.scheduledFor,
+        deliveryStats: input.deliveryStats,
+      }),
       source: "memory" as const,
     };
   }
@@ -79,6 +123,10 @@ export async function createNotification(input: {
     title,
     message,
     audience,
+    notificationType: input.notificationType || "Info",
+    priority: input.priority || "Normal",
+    scheduledFor: input.scheduledFor || "",
+    deliveryStats: input.deliveryStats,
     createdAt: now,
     updatedAt: now,
   };

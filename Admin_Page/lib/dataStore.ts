@@ -8,7 +8,16 @@ export type MemoryNotificationRecord = {
   id: string;
   title: string;
   message: string;
-  audience: "all";
+  audience: string;
+  notificationType?: string;
+  priority?: string;
+  scheduledFor?: string;
+  deliveryStats?: {
+    sent: number;
+    read: number;
+    failed: number;
+    audienceSize: number;
+  };
   createdAt: string;
 };
 
@@ -52,13 +61,26 @@ export function getMemoryNotifications() {
 export function addMemoryNotification(input: {
   title: string;
   message: string;
-  audience?: "all";
+  audience?: string;
+  notificationType?: string;
+  priority?: string;
+  scheduledFor?: string;
+  deliveryStats?: {
+    sent: number;
+    read: number;
+    failed: number;
+    audienceSize: number;
+  };
 }) {
   const created: MemoryNotificationRecord = {
     id: `memory-notification-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: input.title,
     message: input.message,
     audience: input.audience || "all",
+    notificationType: input.notificationType,
+    priority: input.priority,
+    scheduledFor: input.scheduledFor,
+    deliveryStats: input.deliveryStats,
     createdAt: new Date().toISOString(),
   };
 

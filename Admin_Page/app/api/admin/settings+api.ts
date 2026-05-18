@@ -6,11 +6,12 @@ const SETTINGS_ID = "main";
 
 const defaultSettings: Pick<
   SettingsDoc,
-  "electricityRate" | "billingCycle" | "latePenaltyPercent"
+  "electricityRate" | "billingCycle" | "latePenaltyPercent" | "effectiveDate"
 > = {
   electricityRate: 12.5,
   billingCycle: "monthly",
   latePenaltyPercent: 5,
+  effectiveDate: "nextCycle",
 };
 
 type SettingsDoc = {
@@ -18,6 +19,7 @@ type SettingsDoc = {
   electricityRate: number;
   billingCycle: "monthly" | "weekly";
   latePenaltyPercent: number;
+  effectiveDate?: "immediate" | "nextCycle";
   updatedAt?: string;
 };
 
@@ -56,6 +58,7 @@ export async function PATCH(request: Request) {
       electricityRate: number;
       billingCycle: "monthly" | "weekly";
       latePenaltyPercent: number;
+      effectiveDate: "immediate" | "nextCycle";
     }>;
 
     const mongo = await getMongoClient();
@@ -71,6 +74,7 @@ export async function PATCH(request: Request) {
           electricityRate: body.electricityRate ?? defaultSettings.electricityRate,
           billingCycle: body.billingCycle ?? defaultSettings.billingCycle,
           latePenaltyPercent: body.latePenaltyPercent ?? defaultSettings.latePenaltyPercent,
+          effectiveDate: body.effectiveDate ?? defaultSettings.effectiveDate,
           updatedAt: new Date().toISOString(),
         },
       },

@@ -10,6 +10,7 @@ import {
 import { loginAdmin, type AdminSession } from "./authApi";
 import {
   getStoredSession,
+  setSessionPersistence,
   setStoredSession,
   type StoredAdminSession,
 } from "./authClient";
@@ -19,7 +20,7 @@ type AuthState = {
   isBootstrapping: boolean;
   admin: StoredAdminSession | null;
   adminEmail: string | null;
-  signIn: (identifier: string, password: string) => Promise<void>;
+  signIn: (identifier: string, password: string, rememberMe?: boolean) => Promise<void>;
   signOut: () => void;
 };
 
@@ -39,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsBootstrapping(false);
   }, []);
 
-  const signIn = useCallback(async (identifier: string, password: string) => {
+  const signIn = useCallback(async (identifier: string, password: string, rememberMe = true) => {
     const session = (await loginAdmin(identifier, password)) as AdminSession;
     const normalized: StoredAdminSession = {
       id: session.id,
@@ -51,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setAdmin(normalized);
     setStoredSession(normalized);
+    setSessionPersistence(rememberMe);
   }, []);
 
   const signOut = useCallback(() => {

@@ -26,7 +26,16 @@ export async function POST(request: Request) {
     const body = (await request.json()) as Partial<{
       title: string;
       message: string;
-      audience: "all";
+      audience: string;
+      notificationType: string;
+      priority: string;
+      scheduledFor: string;
+      deliveryStats: {
+        sent: number;
+        read: number;
+        failed: number;
+        audienceSize: number;
+      };
     }>;
 
     if (!body.message?.trim()) {
@@ -37,6 +46,10 @@ export async function POST(request: Request) {
       title: body.title,
       message: body.message,
       audience: body.audience || "all",
+      notificationType: body.notificationType,
+      priority: body.priority,
+      scheduledFor: body.scheduledFor,
+      deliveryStats: body.deliveryStats,
     });
 
     return Response.json(response, { status: 201 });

@@ -38,7 +38,7 @@ export default function UsersPage() {
 
   // Get top 5 users for chart (sorted by usage)
   const topUsersForChart = useMemo(() => {
-    return users
+    return [...users]
       .sort((a, b) => b.usageKwh - a.usageKwh)
       .slice(0, 5)
       .map((user) => ({
@@ -254,8 +254,10 @@ export default function UsersPage() {
                   <Pressable
                     onPress={() => handleDeletePress(user._id, user.name)}
                     style={dangerBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Delete ${user.name}`}
                   >
-                    <FontAwesome6 name="trash" size={14} color="#fecaca" />
+                    <FontAwesome6 name="trash" size={15} color="#DC2626" />
                   </Pressable>
                 </View>
               </View>
@@ -351,10 +353,10 @@ const primaryBtn = (palette: ReturnType<typeof useThemePalette>) => ({
 const primaryText = { color: "#1b1e2f", fontWeight: "800" as const };
 
 const dangerBtn = {
-  borderRadius: 10,
+  borderRadius: 8,
   borderWidth: 1,
-  borderColor: "rgba(239,68,68,0.5)",
-  backgroundColor: "rgba(239,68,68,0.15)",
+  borderColor: "#DC2626",
+  backgroundColor: "#FEF2F2",
   width: 34,
   height: 34,
   alignItems: "center" as const,

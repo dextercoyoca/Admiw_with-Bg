@@ -158,14 +158,14 @@ export function AdminShell({ title, subtitle, children }: AdminShellProps) {
               }}
               style={{
                 borderWidth: 1,
-                borderColor: "rgba(239, 68, 68, 0.5)",
-                backgroundColor: "rgba(239, 68, 68, 0.15)",
+                borderColor: "#B91C1C",
+                backgroundColor: "#DC2626",
                 borderRadius: 10,
                 paddingVertical: 10,
                 alignItems: "center",
               }}
             >
-              <Text style={{ color: "#fecaca", fontWeight: "700" }}>
+              <Text style={{ color: "#FFFFFF", fontWeight: "800" }}>
                 Logout
               </Text>
             </Pressable>

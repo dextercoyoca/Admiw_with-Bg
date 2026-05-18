@@ -15,9 +15,22 @@ export type AdminUserRecord = {
   usageKwh: number;
   revenueCollected: number;
   amountDue: number;
+  dueDate?: string;
   paymentStatus: "Paid" | "Unpaid";
   clientStatus: "Active" | "Suspended" | "Disconnected";
   updatedAt: string;
+  usageHistory: Array<{
+    label: string;
+    usage: number;
+  }>;
+};
+
+type UsageEntry = {
+  usage?: number;
+  day?: string;
+  month?: string;
+  date?: string;
+  label?: string;
 };
 
 type UserDoc = {
@@ -31,17 +44,19 @@ type UserDoc = {
   plan?: string;
   subscriptionPlan?: string;
   usage?: {
-    weekly?: Array<{ usage?: number }>;
-    monthly?: Array<{ usage?: number }>;
+    weekly?: UsageEntry[];
+    monthly?: UsageEntry[];
   };
   payments?: {
     currentBill?: {
       amount?: number;
       status?: string;
+      dueDate?: string;
     };
     history?: Array<{ amount?: number; status?: string }>;
   };
   amountDue?: number;
+  dueDate?: string;
   paymentStatus?: string;
   clientStatus?: string;
   status?: string;
@@ -102,9 +117,36 @@ function mapPaymentFromReceipts(doc: UserDoc) {
   return "Unpaid" as const;
 }
 
+function formatUsageLabel(item: UsageEntry, index: number) {
+  if (item.label) return item.label;
+  if (item.day) return item.day;
+  if (item.month) return item.month;
+
+  if (item.date) {
+    const date = new Date(item.date);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleDateString("en", { month: "short", day: "numeric" });
+    }
+
+    return item.date;
+  }
+
+  return `P${index + 1}`;
+}
+
+function mapUsageHistory(entries: UsageEntry[]) {
+  return entries.map((item, index) => ({
+    label: formatUsageLabel(item, index),
+    usage: Number(item.usage || 0),
+  }));
+}
+
 function mapUser(doc: UserDoc): AdminUserRecord {
   const monthlyUsage = doc.usage?.monthly || [];
-  const usageKwh = monthlyUsage.reduce((sum, item) => sum + Number(item.usage || 0), 0);
+  const weeklyUsage = doc.usage?.weekly || [];
+  const activeUsage = monthlyUsage.length > 0 ? monthlyUsage : weeklyUsage;
+  const usageHistory = mapUsageHistory(activeUsage);
+  const usageKwh = activeUsage.reduce((sum, item) => sum + Number(item.usage || 0), 0);
 
   const history = doc.payments?.history || [];
   const revenueCollected = history
@@ -112,6 +154,7 @@ function mapUser(doc: UserDoc): AdminUserRecord {
     .reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
   const billAmount = Number(doc.payments?.currentBill?.amount ?? doc.amountDue ?? 0);
+  const dueDate = doc.payments?.currentBill?.dueDate || doc.dueDate;
   const paymentStatus = mapPaymentFromReceipts(doc);
 
   return {
@@ -126,9 +169,11 @@ function mapUser(doc: UserDoc): AdminUserRecord {
     usageKwh,
     revenueCollected,
     amountDue: billAmount,
+    dueDate,
     paymentStatus,
     clientStatus: mapStatus(doc.clientStatus || doc.status),
     updatedAt: doc.updatedAt || new Date().toISOString(),
+    usageHistory,
   };
 }
 

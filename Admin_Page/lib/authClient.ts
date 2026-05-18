@@ -10,7 +10,13 @@ export type StoredAdminSession = {
   token: string;
 };
 
+let memorySession: StoredAdminSession | null = null;
+
 export function getStoredSession() {
+  if (memorySession) {
+    return memorySession;
+  }
+
   if (Platform.OS !== "web") {
     return null;
   }
@@ -28,6 +34,8 @@ export function getStoredSession() {
 }
 
 export function setStoredSession(value: StoredAdminSession | null) {
+  memorySession = value;
+
   if (Platform.OS !== "web") {
     return;
   }
@@ -39,6 +47,22 @@ export function setStoredSession(value: StoredAdminSession | null) {
     }
 
     localStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {
+    // no-op
+  }
+}
+
+export function setSessionPersistence(persist: boolean) {
+  if (Platform.OS !== "web" || !memorySession) {
+    return;
+  }
+
+  try {
+    if (persist) {
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(memorySession));
+    } else {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
   } catch {
     // no-op
   }

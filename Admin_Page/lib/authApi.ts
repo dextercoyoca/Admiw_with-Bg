@@ -6,6 +6,18 @@ export type AdminSession = {
   token: string;
 };
 
+export class LoginError extends Error {
+  attemptsLeft?: number;
+  retryAfter?: number;
+
+  constructor(message: string, details?: { attemptsLeft?: number; retryAfter?: number }) {
+    super(message);
+    this.name = "LoginError";
+    this.attemptsLeft = details?.attemptsLeft;
+    this.retryAfter = details?.retryAfter;
+  }
+}
+
 export async function loginAdmin(identifier: string, password: string) {
   const response = await fetch("/api/auth/login", {
     method: "POST",
@@ -18,10 +30,15 @@ export async function loginAdmin(identifier: string, password: string) {
   const payload = (await response.json()) as {
     session?: AdminSession;
     error?: string;
+    attemptsLeft?: number;
+    retryAfter?: number;
   };
 
   if (!response.ok || !payload.session) {
-    throw new Error(payload.error || "Unable to sign in");
+    throw new LoginError(payload.error || "Unable to sign in", {
+      attemptsLeft: payload.attemptsLeft,
+      retryAfter: payload.retryAfter,
+    });
   }
 
   return payload.session;

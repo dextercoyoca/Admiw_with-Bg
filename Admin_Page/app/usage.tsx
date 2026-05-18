@@ -1,5 +1,5 @@
 import { AdminShell } from "@/components/AdminShell";
-import { ConsumptionChart } from "@/components/ConsumptionChart";
+import { ConsumptionChart, UsageTrendChart } from "@/components/ConsumptionChart";
 import { useThemePalette } from "@/lib/theme";
 import { useAdminUsers } from "@/lib/useAdminUsers";
 import { useMemo, useState } from "react";
@@ -24,7 +24,7 @@ export default function UsagePage() {
 
   // Get top 8 users for consumption chart
   const chartData = useMemo(() => {
-    return users
+    return [...users]
       .sort((a, b) => b.usageKwh - a.usageKwh)
       .slice(0, 8)
       .map((user) => ({
@@ -77,24 +77,38 @@ export default function UsagePage() {
         {rows.map((user) => {
           const high = user.usageKwh >= thresholdNumber;
           return (
-            <View key={user._id} style={[row(palette), { flexWrap: "wrap" }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: palette.text, fontWeight: "800" }}>
-                  {user.name}
-                </Text>
-                <Text style={{ color: palette.textMuted }}>{user.email}</Text>
-              </View>
-              <Text style={{ color: palette.text }}>
-                {user.usageKwh.toFixed(1)} kWh
-              </Text>
-              <Text
+            <View key={user._id} style={row(palette)}>
+              <View
                 style={{
-                  color: high ? palette.warning : palette.textMuted,
-                  minWidth: 110,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 10,
                 }}
               >
-                {high ? "High Usage" : "Normal"}
-              </Text>
+                <View style={{ flex: 1, minWidth: 190 }}>
+                  <Text style={{ color: palette.text, fontWeight: "800" }}>
+                    {user.name}
+                  </Text>
+                  <Text style={{ color: palette.textMuted }}>{user.email}</Text>
+                </View>
+                <Text style={{ color: palette.text, fontWeight: "800", minWidth: 90 }}>
+                  {user.usageKwh.toFixed(1)} kWh
+                </Text>
+                <Text
+                  style={{
+                    color: high ? palette.warning : palette.textMuted,
+                    minWidth: 110,
+                    fontWeight: "700",
+                  }}
+                >
+                  {high ? "High Usage" : "Normal"}
+                </Text>
+              </View>
+              <View style={{ marginTop: 12 }}>
+                <Text style={miniLabel(palette)}>kWh vs. Time</Text>
+                <UsageTrendChart data={user.usageHistory} height={150} />
+              </View>
             </View>
           );
         })}
@@ -117,6 +131,14 @@ const label = (palette: ReturnType<typeof useThemePalette>) => ({
   marginBottom: 8,
 });
 
+const miniLabel = (palette: ReturnType<typeof useThemePalette>) => ({
+  color: palette.textMuted,
+  fontSize: 11,
+  fontWeight: "800" as const,
+  marginBottom: 6,
+  textTransform: "uppercase" as const,
+});
+
 const input = (palette: ReturnType<typeof useThemePalette>) => ({
   borderWidth: 1,
   borderColor: palette.inputBorder,
@@ -133,8 +155,4 @@ const row = (palette: ReturnType<typeof useThemePalette>) => ({
   borderColor: palette.rowBorder,
   borderRadius: 10,
   padding: 10,
-  flexDirection: "row" as const,
-  alignItems: "center" as const,
-  flexWrap: "wrap" as const,
-  gap: 10,
 });
