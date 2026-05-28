@@ -97,15 +97,15 @@ export default function Index() {
   function handlePasswordKeyPress(event: {
     nativeEvent?: { key?: string; getModifierState?: (key: string) => boolean };
   }) {
-    const key = event.nativeEvent?.key || "";
-    const modifierState = event.nativeEvent?.getModifierState;
-    if (typeof modifierState === "function") {
-      setCapsLockOn(Boolean(modifierState("CapsLock")));
+    const nativeEvent = event.nativeEvent;
+    const key = nativeEvent?.key || "";
+    if (typeof nativeEvent?.getModifierState === "function") {
+      setCapsLockOn(Boolean(nativeEvent.getModifierState("CapsLock")));
       return;
     }
 
-    if (key.length === 1 && /[A-Z]/.test(key)) {
-      setCapsLockOn(true);
+    if (key.length === 1 && /[a-z]/i.test(key)) {
+      setCapsLockOn(/[A-Z]/.test(key));
     }
   }
 
