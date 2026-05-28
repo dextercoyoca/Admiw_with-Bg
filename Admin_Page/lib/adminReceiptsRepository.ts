@@ -115,6 +115,23 @@ function getReceiptUri(item: PaymentHistoryItem) {
   ).toString();
 }
 
+function getReceiptEntryId(userId: string, item: PaymentHistoryItem, index: number) {
+  return `${userId}-${item.id || item.date || "history"}-${index}`;
+}
+
+function receiptMatchesId(
+  receiptId: string,
+  userId: string,
+  item: PaymentHistoryItem,
+  index: number,
+) {
+  return (
+    getReceiptEntryId(userId, item, index) === receiptId ||
+    item.id === receiptId ||
+    getReceiptUri(item) === receiptId
+  );
+}
+
 export async function listAdminReceipts() {
   const mongo = await getMongoClient();
   if (!mongo) {
@@ -135,13 +152,13 @@ export async function listAdminReceipts() {
     const userEmail = user.email || "";
     const history = user.payments?.history || [];
 
-    for (const item of history) {
+    for (const [index, item] of history.entries()) {
       if (!shouldIncludeHistoryAsReceipt(item)) {
         continue;
       }
 
       receipts.push({
-        id: item.id || `${userId}-${item.date || Date.now()}`,
+        id: getReceiptEntryId(userId, item, index),
         userId,
         userName,
         userEmail,
@@ -276,7 +293,7 @@ export function normalizeUploadedReceipt(input: {
 export async function updateReceiptStatus(input: {
   userId: string;
   receiptId: string;
-  status: "Approved" | "Rejected";
+  status: "Approved" | "Rejected" | "Pending Verification";
 }) {
   const mongo = await getMongoClient();
   if (!mongo) {
@@ -292,19 +309,41 @@ export async function updateReceiptStatus(input: {
   }
 
   const history = user.payments?.history || [];
-  const nextHistory = history.map((item) => {
-    const entryId = item.id || `${user._id.toString()}-${item.date || ""}`;
-    if (entryId !== input.receiptId) {
+  let receiptFound = false;
+  const userId = user._id.toString();
+  const nextHistory = history.map((item, index) => {
+    if (!receiptMatchesId(input.receiptId, userId, item, index)) {
       return item;
     }
 
+    receiptFound = true;
     return {
       ...item,
-      status: input.status === "Approved" ? "Completed" : "Rejected",
+      status:
+        input.status === "Approved"
+          ? "Completed"
+          : input.status === "Rejected"
+            ? "Rejected"
+            : "Pending Verification",
     };
   });
 
-  const nextCurrentBillStatus = input.status === "Approved" ? "Paid" : "Unpaid";
+  const latestReceiptId = `${userId}-latest-receipt`;
+  const pendingBillReceiptId = `${userId}-current-bill-pending`;
+  const latestReceiptMatches =
+    Boolean(user.payments?.latestReceipt) &&
+    [latestReceiptId, pendingBillReceiptId, user.payments?.latestReceipt].includes(input.receiptId);
+
+  if (!receiptFound && !latestReceiptMatches) {
+    return null;
+  }
+
+  const nextCurrentBillStatus =
+    input.status === "Approved"
+      ? "Paid"
+      : input.status === "Rejected"
+        ? "Unpaid"
+        : "Pending Verification";
 
   await users.updateOne(idQuery(input.userId), {
     $set: {
@@ -331,43 +370,42 @@ export async function deleteReceipt(receiptId: string) {
   const db = mongo.db(getDatabaseName());
   const users = db.collection<UserDoc>(USERS_COLLECTION);
 
-  // Find the user that has this receipt in their history
-  const user = await users.findOne({
-    "payments.history": {
-      $elemMatch: {
-        $or: [
-          { id: receiptId },
-          { receiptUri: receiptId },
-          { receiptUrl: receiptId },
-          { receiptURL: receiptId },
-          { receiptImage: receiptId },
-          { imageUri: receiptId },
-          { imageUrl: receiptId },
-          { proofOfPayment: receiptId },
-          { attachmentUrl: receiptId },
-          { url: receiptId },
-        ],
-      },
-    },
-  });
+  const userList = await users.find({}).toArray();
 
-  if (!user) {
-    return null;
+  for (const user of userList) {
+    const userId = user._id.toString();
+    const history = user.payments?.history || [];
+    const matchingEntry = history.find((item, index) =>
+      receiptMatchesId(receiptId, userId, item, index),
+    );
+    const matchingReceiptUri = matchingEntry ? getReceiptUri(matchingEntry) : "";
+    const latestReceiptId = `${userId}-latest-receipt`;
+    const pendingBillReceiptId = `${userId}-current-bill-pending`;
+    const latestReceiptMatches =
+      Boolean(user.payments?.latestReceipt) &&
+      [latestReceiptId, pendingBillReceiptId, user.payments?.latestReceipt].includes(receiptId);
+
+    if (!matchingEntry && !latestReceiptMatches) {
+      continue;
+    }
+
+    const nextHistory = history.filter(
+      (item, index) => !receiptMatchesId(receiptId, userId, item, index),
+    );
+    const deletedLatestReceipt =
+      latestReceiptMatches ||
+      (Boolean(matchingReceiptUri) && matchingReceiptUri === user.payments?.latestReceipt);
+
+    await users.updateOne(idQuery(userId), {
+      $set: {
+        "payments.history": nextHistory,
+        ...(deletedLatestReceipt ? { "payments.latestReceipt": null } : {}),
+        updatedAt: new Date().toISOString(),
+      },
+    });
+
+    return true;
   }
 
-  // Remove the receipt from the history array
-  const history = user.payments?.history || [];
-  const nextHistory = history.filter((item) => {
-    const entryId = item.id || `${user._id.toString()}-${item.date || ""}`;
-    return entryId !== receiptId && getReceiptUri(item) !== receiptId;
-  });
-
-  await users.updateOne(idQuery(user._id.toString()), {
-    $set: {
-      "payments.history": nextHistory,
-      updatedAt: new Date().toISOString(),
-    },
-  });
-
-  return true;
+  return null;
 }

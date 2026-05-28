@@ -43,9 +43,26 @@ const mongoOptions = {
 
 let client: MongoClient | null = null;
 let connectPromise: Promise<MongoClient | null> | null = null;
+let lastFailureAt = 0;
+let lastFailureMessage = "";
+
+const FAILURE_COOLDOWN_MS = 30_000;
+
+function getMongoUri() {
+  return (process.env.ATLAS_URI || process.env.MONGODB_URI || "").trim();
+}
+
+function shouldRetryConnection() {
+  return !lastFailureAt || Date.now() - lastFailureAt > FAILURE_COOLDOWN_MS;
+}
+
+function rememberFailure(error: unknown) {
+  lastFailureAt = Date.now();
+  lastFailureMessage = error instanceof Error ? error.message : String(error);
+}
 
 async function connectWithRetry(retries = 3, delayMs = 2000) {
-  const uri = process.env.ATLAS_URI || process.env.MONGODB_URI;
+  const uri = getMongoUri();
   if (!uri) {
     return null;
   }
@@ -71,16 +88,22 @@ async function connectWithRetry(retries = 3, delayMs = 2000) {
     }
   }
 
+  rememberFailure(lastError);
+  console.warn("[mongodb] Connection failed after retries. Falling back to in-memory store.");
   console.warn(
-    "[mongodb] Connection failed after retries. Falling back to in-memory store.",
-    lastError instanceof Error ? lastError.message : lastError
+    "[mongodb] Check Atlas Network Access/IP whitelist, cluster status, credentials, and ATLAS_URI in config.env.",
   );
+  console.warn("[mongodb]", lastFailureMessage);
   return null;
 }
 
 export async function getMongoClient() {
-  const uri = process.env.ATLAS_URI || process.env.MONGODB_URI;
+  const uri = getMongoUri();
   if (!uri) {
+    return null;
+  }
+
+  if (!client && !shouldRetryConnection()) {
     return null;
   }
 

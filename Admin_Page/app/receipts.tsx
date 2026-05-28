@@ -5,7 +5,7 @@ import { useAdminUsers } from "@/lib/useAdminUsers";
 import { useReceipts } from "@/lib/useReceipts";
 import type { ReceiptRecord } from "@/lib/receiptsApi";
 import { FontAwesome6 } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -32,7 +32,7 @@ const rejectNotes = ["Amount mismatch", "Unreadable receipt", "Duplicate upload"
 
 export default function ReceiptsPage() {
   const palette = useThemePalette();
-  const { receipts, loading, error, updateStatus, deleteReceipt } = useReceipts();
+  const { receipts, loading, error, updateStatus, deleteReceipt, deleteReceipts } = useReceipts();
   const { users } = useAdminUsers();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ReceiptFilter>("All");
@@ -49,7 +49,33 @@ export default function ReceiptsPage() {
     bulk?: boolean;
   }>({ visible: false });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(null);
+  const [processingSeconds, setProcessingSeconds] = useState(0);
+  const [deleteProgress, setDeleteProgress] = useState({ deleted: 0, total: 0 });
   const [notice, setNotice] = useState("");
+  const [completionPrompt, setCompletionPrompt] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    tone: "success" | "danger";
+  }>({
+    visible: false,
+    title: "",
+    message: "",
+    tone: "success",
+  });
+
+  useEffect(() => {
+    if (!isProcessing || !processingStartedAt) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      setProcessingSeconds(Math.floor((Date.now() - processingStartedAt) / 1000));
+    }, 250);
+
+    return () => clearInterval(intervalId);
+  }, [isProcessing, processingStartedAt]);
 
   const userById = useMemo(() => {
     const map = new Map(users.map((user) => [user._id, user]));
@@ -82,11 +108,24 @@ export default function ReceiptsPage() {
     receipts.find((receipt) => receipt.id === selectedReceiptId) || rows[0];
   const selectedUser = selectedReceipt ? userById.get(selectedReceipt.userId) : undefined;
   const selectedRows = receipts.filter((receipt) => selectedIds.includes(receipt.id));
+  const visibleReceiptIds = Array.from(new Set(rows.map((receipt) => receipt.id)));
+  const selectedVisibleCount = visibleReceiptIds.filter((id) => selectedIds.includes(id)).length;
+  const allVisibleSelected = visibleReceiptIds.length > 0 && selectedVisibleCount === visibleReceiptIds.length;
 
   const toggleSelected = (id: string) => {
     setSelectedIds((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
     );
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((current) => {
+      if (allVisibleSelected) {
+        return current.filter((id) => !visibleReceiptIds.includes(id));
+      }
+
+      return Array.from(new Set([...current, ...visibleReceiptIds]));
+    });
   };
 
   const requestAction = (
@@ -103,23 +142,74 @@ export default function ReceiptsPage() {
     const targets = confirm.bulk ? selectedRows : confirm.receipt ? [confirm.receipt] : [];
     if (targets.length === 0) return;
 
+    const startedAt = Date.now();
     setIsProcessing(true);
+    setProcessingStartedAt(startedAt);
+    setProcessingSeconds(0);
+    setDeleteProgress({
+      deleted: 0,
+      total: confirm.action === "Delete" ? targets.length : 0,
+    });
+    let deletedCount = 0;
     try {
-      for (const receipt of targets) {
-        if (confirm.action === "Delete") {
-          await deleteReceipt(receipt.id);
-        } else if (confirm.action === "Revoke") {
-          await updateStatus(receipt.id, receipt.userId, "Pending Verification");
-        } else {
-          await updateStatus(receipt.id, receipt.userId, confirm.action);
+      let completedCount = targets.length;
+      if (confirm.action === "Delete" && confirm.bulk) {
+        completedCount = await deleteReceipts(
+          targets.map((receipt) => receipt.id),
+          (deleted, total) => {
+            deletedCount = deleted;
+            setDeleteProgress({ deleted, total });
+          },
+        );
+      } else {
+        for (const receipt of targets) {
+          if (confirm.action === "Delete") {
+            await deleteReceipt(receipt.id);
+            deletedCount = 1;
+            setDeleteProgress({ deleted: 1, total: 1 });
+          } else if (confirm.action === "Revoke") {
+            await updateStatus(receipt.id, receipt.userId, "Pending Verification");
+          } else {
+            await updateStatus(receipt.id, receipt.userId, confirm.action);
+          }
         }
       }
 
-      setNotice(`${actionPastTense(confirm.action)} ${targets.length} receipt${targets.length > 1 ? "s" : ""}.`);
+      const elapsed = formatDuration(Math.floor((Date.now() - startedAt) / 1000));
+      const noun = confirm.action === "Delete" ? "receipt file" : "receipt record";
+      const message =
+        confirm.action === "Delete"
+          ? `${completedCount} ${noun}${completedCount === 1 ? "" : "s"} deleted successfully. List updated.`
+          : `${actionPastTense(confirm.action)} ${completedCount} ${noun}${completedCount === 1 ? "" : "s"} successfully in ${elapsed}. List updated.`;
+      setNotice(message);
+      setCompletionPrompt({
+        visible: true,
+        title: "Action Complete",
+        message,
+        tone: "success",
+      });
       setSelectedIds([]);
+      setConfirm({ visible: false });
+    } catch (actionError) {
+      const message =
+        actionError instanceof Error
+          ? actionError.message
+          : "Unable to update selected receipts";
+      setNotice(message);
+      setCompletionPrompt({
+        visible: true,
+        title: "Action Failed",
+        message:
+          confirm.action === "Delete"
+            ? `${message} ${deletedCount}/${targets.length} receipts were deleted.`
+            : `${message} Time elapsed: ${formatDuration(Math.floor((Date.now() - startedAt) / 1000))}.`,
+        tone: "danger",
+      });
       setConfirm({ visible: false });
     } finally {
       setIsProcessing(false);
+      setProcessingStartedAt(null);
+      setDeleteProgress({ deleted: 0, total: 0 });
     }
   };
 
@@ -180,8 +270,17 @@ export default function ReceiptsPage() {
           </View>
 
           <View style={bulkBar(palette)}>
-            <Text style={{ color: palette.textMuted }}>{selectedIds.length} selected</Text>
+            <Text style={{ color: palette.textMuted }}>
+              {selectedIds.length} selected
+              {visibleReceiptIds.length ? ` (${selectedVisibleCount}/${visibleReceiptIds.length} visible)` : ""}
+            </Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              <BulkButton
+                label={allVisibleSelected ? "Clear" : "Select All"}
+                icon={allVisibleSelected ? "minus" : "check-double"}
+                disabled={!rows.length}
+                onPress={toggleSelectAllVisible}
+              />
               <BulkButton label="Approve" icon="check" disabled={!selectedIds.length} onPress={() => requestAction("Approved", undefined, true)} />
               <BulkButton label="Reject" icon="xmark" disabled={!selectedIds.length} onPress={() => requestAction("Rejected", undefined, true)} />
               <BulkButton label="Delete" icon="trash" disabled={!selectedIds.length} onPress={() => requestAction("Delete", undefined, true)} />
@@ -344,8 +443,17 @@ export default function ReceiptsPage() {
         cancelText="Cancel"
         isDangerous={confirm.action === "Rejected" || confirm.action === "Delete"}
         isLoading={isProcessing}
+        loadingMessage={getActionLoadingMessage(confirm.action, processingSeconds, deleteProgress)}
         onConfirm={handleConfirmAction}
         onCancel={() => setConfirm({ visible: false })}
+      />
+
+      <ActionCompletionModal
+        visible={completionPrompt.visible}
+        title={completionPrompt.title}
+        message={completionPrompt.message}
+        tone={completionPrompt.tone}
+        onClose={() => setCompletionPrompt((current) => ({ ...current, visible: false }))}
       />
 
       <ReceiptPreviewModal
@@ -442,6 +550,46 @@ function TimelineItem({ label, value, done }: { label: string; value: string; do
   );
 }
 
+function ActionCompletionModal({
+  visible,
+  title,
+  message,
+  tone,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  message: string;
+  tone: "success" | "danger";
+  onClose: () => void;
+}) {
+  const palette = useThemePalette();
+  const color = tone === "success" ? palette.success : palette.danger;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+      <View style={completionBackdrop}>
+        <View style={completionPanel(palette)}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <FontAwesome6
+              name={tone === "success" ? "circle-check" : "circle-exclamation"}
+              size={22}
+              color={color}
+            />
+            <Text style={{ color: palette.text, fontSize: 18, fontWeight: "900", flex: 1 }}>
+              {title}
+            </Text>
+          </View>
+          <Text style={{ color: palette.textMuted, lineHeight: 20 }}>{message}</Text>
+          <Pressable onPress={onClose} style={[completionButton(palette), { backgroundColor: color }]}>
+            <Text style={{ color: "#1b1e2f", fontWeight: "900" }}>OK</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function ReceiptPreviewModal({ receipt, previewFailed, setPreviewFailed, onClose }: { receipt: ReceiptRecord | null; previewFailed: boolean; setPreviewFailed: (value: boolean) => void; onClose: () => void }) {
   const palette = useThemePalette();
   const preview = getReceiptPreview(receipt?.receiptUri || "");
@@ -533,6 +681,40 @@ function actionPastTense(action: ReceiptAction) {
   if (action === "Rejected") return "Rejected";
   if (action === "Delete") return "Deleted";
   return "Revoked";
+}
+
+function actionPresentTense(action?: ReceiptAction) {
+  if (action === "Approved") return "Approving";
+  if (action === "Rejected") return "Rejecting";
+  if (action === "Delete") return "Deleting";
+  if (action === "Revoke") return "Revoking";
+  return "Processing";
+}
+
+function getActionLoadingMessage(
+  action: ReceiptAction | undefined,
+  processingSeconds: number,
+  deleteProgress: { deleted: number; total: number },
+) {
+  if (action === "Delete") {
+    return `Deleting receipts... ${deleteProgress.deleted}/${deleteProgress.total} deleted`;
+  }
+
+  return `${actionPresentTense(action)}... ${formatDuration(processingSeconds)}`;
+}
+
+function formatDuration(totalSeconds: number) {
+  if (totalSeconds < 1) {
+    return "less than 1 second";
+  }
+
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) {
+    return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  }
+
+  return `${minutes} minute${minutes === 1 ? "" : "s"} ${seconds} second${seconds === 1 ? "" : "s"}`;
 }
 
 function formatCurrency(value: number) {
@@ -769,6 +951,36 @@ const iconButton = (palette: ReturnType<typeof useThemePalette>) => ({
   backgroundColor: palette.panelSoft,
   alignItems: "center" as const,
   justifyContent: "center" as const,
+});
+
+const completionBackdrop = {
+  flex: 1,
+  backgroundColor: "rgba(0, 0, 0, 0.55)",
+  justifyContent: "center" as const,
+  alignItems: "center" as const,
+  padding: 16,
+};
+
+const completionPanel = (palette: ReturnType<typeof useThemePalette>) => ({
+  width: "100%" as const,
+  maxWidth: 420,
+  borderWidth: 1,
+  borderColor: palette.cardBorder,
+  borderRadius: 14,
+  backgroundColor: palette.card,
+  padding: 18,
+  gap: 14,
+});
+
+const completionButton = (palette: ReturnType<typeof useThemePalette>) => ({
+  borderWidth: 1,
+  borderColor: palette.cardBorder,
+  borderRadius: 10,
+  paddingHorizontal: 14,
+  paddingVertical: 11,
+  alignSelf: "flex-end" as const,
+  minWidth: 92,
+  alignItems: "center" as const,
 });
 
 const previewBackdrop = {

@@ -54,6 +54,34 @@ export function useReceipts() {
     setReceipts((current) => current.filter((item) => item.id !== receiptId));
   }, []);
 
+  const deleteReceiptItems = useCallback(async (
+    receiptIds: string[],
+    onDeleted?: (deletedCount: number, totalCount: number) => void,
+  ) => {
+    const uniqueReceiptIds = Array.from(new Set(receiptIds));
+    const deletedIds: string[] = [];
+    const failedErrors: unknown[] = [];
+
+    for (const receiptId of uniqueReceiptIds) {
+      try {
+        await deleteReceipt(receiptId);
+        deletedIds.push(receiptId);
+        setReceipts((current) => current.filter((item) => item.id !== receiptId));
+        onDeleted?.(deletedIds.length, uniqueReceiptIds.length);
+      } catch (error) {
+        failedErrors.push(error);
+      }
+    }
+
+    if (failedErrors.length > 0) {
+      throw new Error(
+        `Deleted ${deletedIds.length} receipt${deletedIds.length === 1 ? "" : "s"}, but ${failedErrors.length} failed.`,
+      );
+    }
+
+    return deletedIds.length;
+  }, []);
+
   return {
     receipts,
     loading,
@@ -61,5 +89,6 @@ export function useReceipts() {
     refresh,
     updateStatus,
     deleteReceipt: deleteReceiptItem,
+    deleteReceipts: deleteReceiptItems,
   };
 }

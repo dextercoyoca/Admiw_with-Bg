@@ -59,7 +59,7 @@ export async function DELETE(request: Request, { id }: { id: string }) {
     const result = await deleteReceipt(id);
 
     if (!result) {
-      return Response.json({ error: "Receipt not found" }, { status: 404 });
+      return Response.json({ success: true, alreadyDeleted: true }, { status: 200 });
     }
 
     return Response.json({ success: true }, { status: 200 });

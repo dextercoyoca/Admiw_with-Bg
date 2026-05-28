@@ -1,6 +1,6 @@
 import { useThemePalette } from "@/lib/theme";
 import { FontAwesome6 } from "@expo/vector-icons";
-import { Modal, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, Text, View } from "react-native";
 
 interface ConfirmationModalProps {
   visible: boolean;
@@ -12,6 +12,7 @@ interface ConfirmationModalProps {
   onConfirm: () => void;
   onCancel: () => void;
   isLoading?: boolean;
+  loadingMessage?: string;
 }
 
 export function ConfirmationModal({
@@ -24,6 +25,7 @@ export function ConfirmationModal({
   onConfirm,
   onCancel,
   isLoading = false,
+  loadingMessage = "Processing...",
 }: ConfirmationModalProps) {
   const palette = useThemePalette();
   const confirmButtonColor = isDangerous
@@ -89,6 +91,14 @@ export function ConfirmationModal({
             <Text style={{ color: palette.textMuted, lineHeight: 20 }}>
               {message}
             </Text>
+            {isLoading ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <ActivityIndicator color={palette.cyan} />
+                <Text style={{ color: palette.cyan, fontWeight: "800" }}>
+                  {loadingMessage}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Footer Actions */}
@@ -141,7 +151,7 @@ export function ConfirmationModal({
                   fontWeight: "700",
                 }}
               >
-                {confirmText}
+                {isLoading ? "Working..." : confirmText}
               </Text>
             </Pressable>
           </View>

@@ -1,7 +1,19 @@
 import { ObjectId } from "mongodb";
+import { pbkdf2Sync, timingSafeEqual } from "node:crypto";
 import { getDatabaseName, getMongoClient } from "./mongodb";
 
 const ADMIN_COLLECTION = "admin-side";
+const FALLBACK_ADMIN_ID = "fallback-admin-1";
+const fallbackAdmins = [
+  {
+    id: FALLBACK_ADMIN_ID,
+    email: "admin@electripay.ph",
+    username: "admin",
+    password: "admin123",
+    name: "Development Admin",
+    role: "admin",
+  },
+];
 
 type AdminDoc = {
   _id: ObjectId | string;
@@ -45,6 +57,45 @@ function getPasswordFromDoc(doc: AdminDoc) {
   return (doc.password || doc.pass || "").toString();
 }
 
+function verifyPbkdf2Password(password: string, storedPassword: string) {
+  const parts = storedPassword.split("$");
+  if (parts.length !== 5 || parts[0] !== "pbkdf2") {
+    return false;
+  }
+
+  const [, digest, iterationsText, saltText, hashText] = parts;
+  const iterations = Number(iterationsText);
+  if (!digest || !Number.isInteger(iterations) || iterations <= 0 || !saltText || !hashText) {
+    return false;
+  }
+
+  try {
+    const salt = Buffer.from(saltText, "base64url");
+    const expectedHash = Buffer.from(hashText, "base64url");
+    const suppliedHash = pbkdf2Sync(password, salt, iterations, expectedHash.length, digest);
+
+    return (
+      suppliedHash.length === expectedHash.length &&
+      timingSafeEqual(suppliedHash, expectedHash)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function verifyAdminPassword(password: string, storedPassword: string) {
+  if (!storedPassword) {
+    return false;
+  }
+
+  if (storedPassword.startsWith("pbkdf2$")) {
+    return verifyPbkdf2Password(password, storedPassword);
+  }
+
+  const suppliedPassword = password.trim();
+  return storedPassword === password || storedPassword.trim() === suppliedPassword;
+}
+
 function getDisplayName(doc: AdminDoc) {
   return (
     doc.name ||
@@ -80,16 +131,6 @@ export async function authenticateAdmin(identifier: string, password: string) {
 
   if (!mongo) {
     // Fallback admin for development when MongoDB is unavailable
-    const fallbackAdmins = [
-      {
-        email: "admin@electripay.ph",
-        username: "admin",
-        password: "admin123",
-        name: "Development Admin",
-        role: "admin"
-      }
-    ];
-
     const normalizedIdentifier = identifier.trim().toLowerCase();
     const suppliedPassword = password.trim();
 
@@ -99,7 +140,7 @@ export async function authenticateAdmin(identifier: string, password: string) {
         admin.password === suppliedPassword
       ) {
         return {
-          id: "fallback-admin-1",
+          id: admin.id,
           email: admin.email,
           displayName: admin.name,
           role: admin.role,
@@ -138,12 +179,8 @@ export async function authenticateAdmin(identifier: string, password: string) {
   }
 
   const storedPassword = getPasswordFromDoc(admin);
-  const suppliedPassword = password.trim();
 
-  if (
-    !storedPassword ||
-    (storedPassword !== password && storedPassword.trim() !== suppliedPassword)
-  ) {
+  if (!verifyAdminPassword(password, storedPassword)) {
     return null;
   }
 
@@ -159,7 +196,20 @@ export async function findAdminById(id: string) {
   const mongo = await getMongoClient();
 
   if (!mongo) {
-    return null;
+    const admin = fallbackAdmins.find((item) => item.id === id);
+
+    if (!admin) {
+      return null;
+    }
+
+    return {
+      id: admin.id,
+      email: admin.email,
+      displayName: admin.name,
+      role: admin.role,
+      active: true,
+      status: "active",
+    };
   }
 
   const db = mongo.db(getDatabaseName());

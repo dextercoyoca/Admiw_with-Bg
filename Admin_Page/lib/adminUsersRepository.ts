@@ -1,5 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDatabaseName, getMongoClient } from "./mongodb";
+import { getMemoryClients } from "./dataStore";
+import type { ClientRecord } from "./types";
 
 const USERS_COLLECTION = "users";
 
@@ -177,6 +179,27 @@ function mapUser(doc: UserDoc): AdminUserRecord {
   };
 }
 
+function mapMemoryClient(client: ClientRecord): AdminUserRecord {
+  return {
+    _id: client._id,
+    name: client.fullName,
+    username: client.email.split("@")[0] || client._id,
+    email: client.email,
+    role: "user",
+    contact: "",
+    address: "",
+    plan: client.plan,
+    usageKwh: 0,
+    revenueCollected: client.paymentStatus === "Paid" ? client.amountDue : 0,
+    amountDue: client.amountDue,
+    dueDate: client.dueDate,
+    paymentStatus: client.paymentStatus,
+    clientStatus: client.clientStatus,
+    updatedAt: client.updatedAt,
+    usageHistory: [],
+  };
+}
+
 function idQuery(id: string) {
   if (ObjectId.isValid(id) && String(new ObjectId(id)) === id) {
     return { _id: new ObjectId(id) };
@@ -188,7 +211,7 @@ function idQuery(id: string) {
 export async function listAdminUsers() {
   const mongo = await getMongoClient();
   if (!mongo) {
-    return [];
+    return getMemoryClients().map(mapMemoryClient);
   }
 
   const docs = await mongo

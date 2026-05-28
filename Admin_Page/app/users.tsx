@@ -4,8 +4,8 @@ import { ConsumptionChart } from "@/components/ConsumptionChart";
 import { useThemePalette } from "@/lib/theme";
 import { useAdminUsers } from "@/lib/useAdminUsers";
 import { FontAwesome6 } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Modal, Pressable, Text, TextInput, View } from "react-native";
 
 export default function UsersPage() {
   const palette = useThemePalette();
@@ -24,7 +24,34 @@ export default function UsersPage() {
   }>({
     visible: false,
   });
+  const [isAdding, setIsAdding] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(null);
+  const [processingSeconds, setProcessingSeconds] = useState(0);
+  const [notice, setNotice] = useState("");
+  const [completionPrompt, setCompletionPrompt] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    tone: "success" | "danger";
+  }>({
+    visible: false,
+    title: "",
+    message: "",
+    tone: "success",
+  });
+
+  useEffect(() => {
+    if ((!isAdding && !isDeleting) || !processingStartedAt) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      setProcessingSeconds(Math.floor((Date.now() - processingStartedAt) / 1000));
+    }, 250);
+
+    return () => clearInterval(intervalId);
+  }, [isAdding, isDeleting, processingStartedAt]);
 
   const filtered = useMemo(
     () =>
@@ -57,12 +84,69 @@ export default function UsersPage() {
 
   const handleConfirmDelete = async () => {
     if (!deleteConfirm.userId) return;
+    const startedAt = Date.now();
     setIsDeleting(true);
+    setProcessingStartedAt(startedAt);
+    setProcessingSeconds(0);
     try {
       await deleteUser(deleteConfirm.userId);
+      const message = `Deleted 1 user record successfully in ${formatDuration(Math.floor((Date.now() - startedAt) / 1000))}. List updated.`;
+      setNotice(message);
+      setCompletionPrompt({
+        visible: true,
+        title: "Delete Complete",
+        message,
+        tone: "success",
+      });
+      setDeleteConfirm({ visible: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to delete user data";
+      setNotice(message);
+      setCompletionPrompt({
+        visible: true,
+        title: "Delete Failed",
+        message: `${message} Time elapsed: ${formatDuration(Math.floor((Date.now() - startedAt) / 1000))}.`,
+        tone: "danger",
+      });
       setDeleteConfirm({ visible: false });
     } finally {
       setIsDeleting(false);
+      setProcessingStartedAt(null);
+    }
+  };
+
+  const handleAddUser = async () => {
+    if (!form.name || !form.email || !form.username || !form.password || isAdding) {
+      return;
+    }
+
+    const startedAt = Date.now();
+    setIsAdding(true);
+    setProcessingStartedAt(startedAt);
+    setProcessingSeconds(0);
+    try {
+      await addUser(form);
+      setForm({ name: "", email: "", username: "", password: "" });
+      const message = `Added 1 user record successfully in ${formatDuration(Math.floor((Date.now() - startedAt) / 1000))}. List updated.`;
+      setNotice(message);
+      setCompletionPrompt({
+        visible: true,
+        title: "Data Added",
+        message,
+        tone: "success",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to add user data";
+      setNotice(message);
+      setCompletionPrompt({
+        visible: true,
+        title: "Add Failed",
+        message: `${message} Time elapsed: ${formatDuration(Math.floor((Date.now() - startedAt) / 1000))}.`,
+        tone: "danger",
+      });
+    } finally {
+      setIsAdding(false);
+      setProcessingStartedAt(null);
     }
   };
 
@@ -114,17 +198,21 @@ export default function UsersPage() {
             }
           />
           <Pressable
-            onPress={async () => {
-              if (!form.name || !form.email || !form.username || !form.password)
-                return;
-              await addUser(form);
-              setForm({ name: "", email: "", username: "", password: "" });
-            }}
-            style={primaryBtn(palette)}
+            onPress={handleAddUser}
+            disabled={isAdding}
+            style={[primaryBtn(palette), isAdding && { opacity: 0.7 }]}
           >
-            <Text style={primaryText}>Add</Text>
+            {isAdding ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <ActivityIndicator color="#1b1e2f" />
+                <Text style={primaryText}>{`Adding... ${formatDuration(processingSeconds)}`}</Text>
+              </View>
+            ) : (
+              <Text style={primaryText}>Add</Text>
+            )}
           </Pressable>
         </View>
+        {notice ? <Text style={{ color: palette.cyan, marginTop: 10, fontWeight: "800" }}>{notice}</Text> : null}
       </View>
 
       <View style={panel(palette)}>
@@ -279,8 +367,17 @@ export default function UsersPage() {
         cancelText="Cancel"
         isDangerous={true}
         isLoading={isDeleting}
+        loadingMessage={`Deleting... ${formatDuration(processingSeconds)}`}
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteConfirm({ visible: false })}
+      />
+
+      <ActionCompletionModal
+        visible={completionPrompt.visible}
+        title={completionPrompt.title}
+        message={completionPrompt.message}
+        tone={completionPrompt.tone}
+        onClose={() => setCompletionPrompt((current) => ({ ...current, visible: false }))}
       />
     </AdminShell>
   );
@@ -306,6 +403,60 @@ function Input({
       style={[input(palette), { minWidth: 180, flexGrow: 1 }]}
     />
   );
+}
+
+function ActionCompletionModal({
+  visible,
+  title,
+  message,
+  tone,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  message: string;
+  tone: "success" | "danger";
+  onClose: () => void;
+}) {
+  const palette = useThemePalette();
+  const color = tone === "success" ? palette.success : palette.danger;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+      <View style={completionBackdrop}>
+        <View style={completionPanel(palette)}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <FontAwesome6
+              name={tone === "success" ? "circle-check" : "circle-exclamation"}
+              size={22}
+              color={color}
+            />
+            <Text style={{ color: palette.text, fontSize: 18, fontWeight: "900", flex: 1 }}>
+              {title}
+            </Text>
+          </View>
+          <Text style={{ color: palette.textMuted, lineHeight: 20 }}>{message}</Text>
+          <Pressable onPress={onClose} style={[completionButton(palette), { backgroundColor: color }]}>
+            <Text style={{ color: "#1b1e2f", fontWeight: "900" }}>OK</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function formatDuration(totalSeconds: number) {
+  if (totalSeconds < 1) {
+    return "less than 1 second";
+  }
+
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) {
+    return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  }
+
+  return `${minutes} minute${minutes === 1 ? "" : "s"} ${seconds} second${seconds === 1 ? "" : "s"}`;
 }
 
 const panel = (palette: ReturnType<typeof useThemePalette>) => ({
@@ -362,3 +513,33 @@ const dangerBtn = {
   alignItems: "center" as const,
   justifyContent: "center" as const,
 };
+
+const completionBackdrop = {
+  flex: 1,
+  backgroundColor: "rgba(0, 0, 0, 0.55)",
+  justifyContent: "center" as const,
+  alignItems: "center" as const,
+  padding: 16,
+};
+
+const completionPanel = (palette: ReturnType<typeof useThemePalette>) => ({
+  width: "100%" as const,
+  maxWidth: 420,
+  borderWidth: 1,
+  borderColor: palette.cardBorder,
+  borderRadius: 14,
+  backgroundColor: palette.card,
+  padding: 18,
+  gap: 14,
+});
+
+const completionButton = (palette: ReturnType<typeof useThemePalette>) => ({
+  borderWidth: 1,
+  borderColor: palette.cardBorder,
+  borderRadius: 10,
+  paddingHorizontal: 14,
+  paddingVertical: 11,
+  alignSelf: "flex-end" as const,
+  minWidth: 92,
+  alignItems: "center" as const,
+});
